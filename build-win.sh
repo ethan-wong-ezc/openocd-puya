@@ -53,24 +53,32 @@ cd "${BUILD_DIR}"
   --enable-dummy \
   --prefix="${DIST_DIR}"
 
-echo "==> Building..."
-make -j"$(nproc)"
+echo "==> Building jimtcl..."
+make -C jimtcl -j"$(nproc)"
 
-echo "==> Installing to ${DIST_DIR}..."
-make install
+echo "==> Building openocd (skipping docs)..."
+make -C src -j"$(nproc)"
+
+echo "==> Installing openocd binary..."
+make -C src install
 
 cd "${ROOT}"
 
-echo "==> Ensuring TCL scripts are present..."
-if [ ! -d "${DIST_DIR}/share/openocd/scripts" ] && [ -d "${ROOT}/tcl" ]; then
-  mkdir -p "${DIST_DIR}/share/openocd/scripts"
-  cp -R "${ROOT}/tcl/"* "${DIST_DIR}/share/openocd/scripts/"
-fi
+echo "==> Installing TCL scripts..."
+mkdir -p "${DIST_DIR}/share/openocd/scripts"
+cp -R "${ROOT}/tcl/"* "${DIST_DIR}/share/openocd/scripts/"
 
 echo "==> Collecting runtime DLLs..."
+mkdir -p "${DIST_DIR}/bin"
 cd "${DIST_DIR}/bin"
 for f in $(x86_64-w64-mingw32-objdump -p openocd.exe | grep 'DLL Name' | awk '{print $3}'); do
   if [ -f "/mingw64/bin/$f" ]; then cp "/mingw64/bin/$f" .; fi
+done
+# grab any locally-built DLLs (e.g. libjim) that live next to the build tree
+for d in "${BUILD_DIR}/jimtcl" "${BUILD_DIR}/src"; do
+  if [ -d "$d" ]; then
+    for f in "$d"/*.dll; do [ -f "$f" ] && cp -u "$f" .; done
+  fi
 done
 cd "${ROOT}"
 
