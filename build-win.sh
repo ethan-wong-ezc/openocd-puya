@@ -53,32 +53,51 @@ cd "${BUILD_DIR}"
   --enable-dummy \
   --prefix="${DIST_DIR}"
 
-echo "==> Building jimtcl..."
-make -C jimtcl -j"$(nproc)"
-
-echo "==> Building openocd (skipping docs)..."
-make -C src -j"$(nproc)"
-
-echo "==> Installing openocd binary..."
-make -C src install
+# OpenOCD uses a non-recursive automake for src (single top-level Makefile),
+# with doc/ as a SUBDIR. texinfo 7 chokes on this fork's openocd.texi, and we
+# don't need docs, so neutralize makeinfo with a no-op (MAKEINFO=true).
+echo "==> Building (docs disabled via MAKEINFO=true)..."
+make -j"$(nproc)" MAKEINFO=true
 
 cd "${ROOT}"
+
+echo "==> Assembling distribution in ${DIST_DIR}..."
+rm -rf "${DIST_DIR}"
+mkdir -p "${DIST_DIR}/bin"
+
+# The openocd binary lives at build/src/openocd.exe (non-recursive layout).
+if [ -f "${BUILD_DIR}/src/openocd.exe" ]; then
+  cp "${BUILD_DIR}/src/openocd.exe" "${DIST_DIR}/bin/"
+elif [ -f "${BUILD_DIR}/src/openocd" ]; then
+  cp "${BUILD_DIR}/src/openocd" "${DIST_DIR}/bin/openocd.exe"
+else
+  echo "ERROR: openocd binary not found under ${BUILD_DIR}/src" >&2
+  find "${BUILD_DIR}" -name 'openocd*' -maxdepth 3 -print >&2 || true
+  exit 1
+fi
 
 echo "==> Installing TCL scripts..."
 mkdir -p "${DIST_DIR}/share/openocd/scripts"
 cp -R "${ROOT}/tcl/"* "${DIST_DIR}/share/openocd/scripts/"
 
+echo "==> Bundling docs that already exist (if any)..."
+mkdir -p "${DIST_DIR}/share/doc/openocd"
+for f in README README.Windows COPYING; do
+  [ -f "${ROOT}/${f}" ] && cp "${ROOT}/${f}" "${DIST_DIR}/share/doc/openocd/" || true
+done
+
 echo "==> Collecting runtime DLLs..."
-mkdir -p "${DIST_DIR}/bin"
 cd "${DIST_DIR}/bin"
 for f in $(x86_64-w64-mingw32-objdump -p openocd.exe | grep 'DLL Name' | awk '{print $3}'); do
   if [ -f "/mingw64/bin/$f" ]; then cp "/mingw64/bin/$f" .; fi
 done
-# grab any locally-built DLLs (e.g. libjim) that live next to the build tree
-for d in "${BUILD_DIR}/jimtcl" "${BUILD_DIR}/src"; do
-  if [ -d "$d" ]; then
-    for f in "$d"/*.dll; do [ -f "$f" ] && cp -u "$f" .; done
-  fi
+# resolve second-level deps of the copied DLLs
+for i in 1 2 3; do
+  for dll in *.dll; do
+    for f in $(x86_64-w64-mingw32-objdump -p "$dll" | grep 'DLL Name' | awk '{print $3}'); do
+      if [ ! -f "$f" ] && [ -f "/mingw64/bin/$f" ]; then cp "/mingw64/bin/$f" .; fi
+    done
+  done
 done
 cd "${ROOT}"
 
