@@ -27,57 +27,24 @@ jobs:
             mingw-w64-x86_64-autotools
             mingw-w64-x86_64-pkgconf
             mingw-w64-x86_64-texinfo
-            mingw-w64-x86_64-zip
+            mingw-w64-x86_64-gettext
             mingw-w64-x86_64-libusb
             mingw-w64-x86_64-libusb-compat
             mingw-w64-x86_64-libftdi
             mingw-w64-x86_64-hidapi
-            mingw-w64-x86_64-libconfuse
             mingw-w64-x86_64-capstone
 
-      - name: Bootstrap & configure
+      - name: Build OpenOCD
         shell: msys2 {0}
         run: |
           set -eo pipefail
-          ./bootstrap
-          ./configure \
-            --prefix="$(pwd)/openocd-pkg" \
-            --enable-ftdi \
-            --enable-stlink \
-            --enable-ti-icdi \
-            --enable-ulink \
-            --enable-usb-blaster \
-            --enable-usb_blaster_2 \
-            --enable-cmsis-dap \
-            --enable-jlink \
-            --enable-vsllink \
-            --enable-remote-bitbang \
-            --enable-dummy \
-            --disable-werror
-
-      - name: Build & install
-        shell: msys2 {0}
-        run: |
-          set -eo pipefail
-          make -j"$(nproc)"
-          make install
-
-      - name: Package (collect DLLs + tcl scripts)
-        shell: msys2 {0}
-        run: |
-          set -eo pipefail
-          cd openocd-pkg/bin
-          for f in $(x86_64-w64-mingw32-objdump -p openocd.exe | grep 'DLL Name' | sed -e 's/\t//' -e 's/DLL Name: //'); do
-            if [ -f "/mingw64/bin/$f" ]; then cp "/mingw64/bin/$f" .; fi
-          done
-          cd ../..
-          zip -r openocd-win64.zip openocd-pkg
+          bash ./build-win.sh
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: openocd-win64
-          path: openocd-win64.zip
+          path: openocd-win64.tar.xz
           if-no-files-found: error
 
       - name: Create Release
@@ -90,4 +57,4 @@ jobs:
           gh release create "${TAG}" \
             --title "OpenOCD Windows x86_64 build ${{ github.run_number }}" \
             --notes "Automated Windows build for commit ${{ github.sha }}" \
-            openocd-win64.zip
+            openocd-win64.tar.xz
